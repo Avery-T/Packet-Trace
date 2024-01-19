@@ -5,8 +5,10 @@
 
 #define MAC_ADDR_SIZE 6 
 #define ETHER_TYPE_SIZE 2
+#define IP_ADDR_SIZE 4
 #define PROTOCOL_INDENT_WIDTH 8 
 #define INFO_INDENT_WIDTH 15 
+#define ARP_BYTE_SKIP 7 
 
 typedef struct ethernet_frame
 { 
@@ -15,8 +17,52 @@ typedef struct ethernet_frame
   uint16_t type; //uint8 is 2 bytes makes the program simpular if i save it as a in
 } ethernet_frame;
 
+typedef struct arp_header
+{ 
+	uint16_t opcode; 
+	u_char sender_mac_addr[MAC_ADDR_SIZE];
+  u_char sender_ip_addr[IP_ADDR_SIZE]; 
+  u_char target_mac_addr[MAC_ADDR_SIZE];
+  u_char target_ip_addr[IP_ADDR_SIZE]; 
+} arp_header;
+
+typedef struct ipv4_header
+{
+  uint8_t header_length : 4; 
+  u_char TOS; 
+  uint16_t total_length; 
+  uint16_t identification; 
+  uint8_t flag; 
+  uint8_t fragment_offest; 
+  uint8_t time_to_live; 
+  uint8_t protocol; 
+  uint16_t header_checksum; 
+  u_char source_ip_address[4]; 
+  u_char dest_ip_address[4];
+}ipv4_header; 
+
+typedef struct tcp_header
+{
+ uint16_t source_port; 
+ uint16_t dest_port; 
+ uint32_t seq_num; 
+ uint32_t awk_num; 
+ uint8_t header_length; 
+ uint8_t flag; 
+ uint16_t window; 
+ uint16_t checksum; 
+ uint16_t urgent_pointer;  
+}tcp_header; 
+
+
 void print_ethernet_header(ethernet_frame ether_frame, uint32_t packet_num, uint32_t frame_len);
 void processes_ether_type_headers(uint16_t type, const u_char * pkt_data, uint32_t data_size); 
+void print_ip_addr(u_char * ip_addr);
+void print_mac_addr(u_char * mac_addr);
+void parse_arp_header(u_char * pkt_data, uint32_t data_size);
+void print_ip_header(u_char * pkt_data); 
+void print_arp_header(arp_header arp_head);
+void print_tcp_header(u_char ** pkt_data);
 
 int main(int argc, char * argv[])
 {
@@ -73,21 +119,32 @@ void processes_ether_type_headers(uint16_t type, const  u_char * pkt_data, uint3
   switch(type)
 	{
 		case 0x806: 
-			//	parse_arp_header(pkt_data,data_size); 
-			//	printf("ARP"); 
+			   parse_arp_header(pkt_data, data_size); 
         break; 
+    case 0x800: 
+				print_ip_header(pkt_data); 
     default: 
 				printf("Not Implemented"); 
-      
   } 
+
   printf("\n"); 
-  
-
-
+}
+void parse_arp_header(u_char * pkt_data, uint32_t data_size)
+{
+     arp_header arp_head; 
+		 pkt_data = pkt_data + ARP_BYTE_SKIP; 
+     arp_head.opcode =  (((uint16_t) pkt_data[0]) << 8) | ((uint16_t) pkt_data[1]); //shifting by a byte and oring to convert into a number
+    	pkt_data = pkt_data + 2; 
+      memcpy(arp_head.sender_mac_addr,pkt_data, 6);
+     	pkt_data = pkt_data + 6; 
+      memcpy(arp_head.sender_ip_addr,pkt_data ,4);
+      pkt_data += 4; 
+      memcpy(arp_head.target_mac_addr,pkt_data, 6);
+      pkt_data += 6; 
+      memcpy(arp_head.target_ip_addr,pkt_data, 4);
+			print_arp_header(arp_head); 
 
 }
-
-
 
 void print_ethernet_header(ethernet_frame ether_frame, uint32_t packet_num, uint32_t frame_len)
 {
@@ -109,8 +166,6 @@ void print_ethernet_header(ethernet_frame ether_frame, uint32_t packet_num, uint
 						printf("%01x:", ether_frame.source_mac_addr[i]); 
           else 
             printf("%01x", ether_frame.source_mac_addr[i]); 
-
-          
 	}
 
   printf("\n");
@@ -126,5 +181,136 @@ void print_ethernet_header(ethernet_frame ether_frame, uint32_t packet_num, uint
   printf("\n"); 
              
 }
+void print_mac_addr(u_char * mac_addr)
+{
+   for(int i = 0; i<MAC_ADDR_SIZE; i++)	{ 
+          if(i<MAC_ADDR_SIZE -1) 
+							printf("%01x:", mac_addr[i]); 
+          else 
+         		 printf("%01x", mac_addr[i]); 
+	}
+  printf("\n");
+}
+void print_ip_addr(u_char * ip_addr) 
+{
+   for(int i = 0; i<IP_ADDR_SIZE; i++)	{ 
+          if(i<IP_ADDR_SIZE -1) 
+							printf("%d.", ip_addr[i]); 
+          else 
+         		 printf("%d", ip_addr[i]); 
+	}
+  printf("\n");
+
+}
+void print_arp_header(arp_header arp_head)
+{
+  printf("%*sARP Header\n",PROTOCOL_INDENT_WIDTH," "); 
+//  switch (ether_frame.type)
+//	{
+//		case 0x806: 
+//				printf("ARP"); 
+//        break; 
+//    default: 
+//				printf("Not Implemented"); 
+//  } 
+   
+  printf("%*sOPCODE: ",INFO_INDENT_WIDTH," " );
+	printf("%x\n", arp_head.opcode);     
+  printf("%*sSENDER MAC: ",INFO_INDENT_WIDTH," " );
+  print_mac_addr(arp_head.sender_mac_addr);
+  printf("%*sSENDER IP: ",INFO_INDENT_WIDTH," "); 
+  print_ip_addr(arp_head.sender_mac_addr); 
+  printf("%*sTARGET MAC: ",INFO_INDENT_WIDTH," " );
+  print_mac_addr(arp_head.target_mac_addr);
+  printf("%*sTARGET IP: ",INFO_INDENT_WIDTH," "); 
+  print_ip_addr(arp_head.target_mac_addr); 
+  printf("\n"); 
+}
+
+void print_ip_header(u_char * pkt_data)
+{
+     uint8_t tcp_flag=0, udp_flag=0,icmp_flag=0; 
+      ipv4_header ip_header;
+      memcpy(&ip_header, pkt_data+1, sizeof(ipv4_header)); 
+      *pkt_data = 1 + sizeof(ipv4_header); //incremeintg hte data pointer to print out the next header
+      printf("%*sIP Header\n",PROTOCOL_INDENT_WIDTH," "); 
+     printf("%*sHeader Len: ",INFO_INDENT_WIDTH," "); 
+     printf("%x (bytes)\n", ip_header.header_length); 
 
 
+     printf("%*sTOS: ",INFO_INDENT_WIDTH," "); 
+   
+      printf("0x%x\n", ip_header.TOS); 
+printf("%*sTTL: ",INFO_INDENT_WIDTH," "); 
+
+      printf("%d\n", ip_header.time_to_live);
+printf("%*sIP PDU Len: ",INFO_INDENT_WIDTH," "); 
+
+      printf("%d (bytes)\n", ntohs(ip_header.total_length));
+printf("%*sPROTOCOL: ",INFO_INDENT_WIDTH," "); 
+
+switch (ip_header.protocol)
+  {
+  		case 0x06: 
+				printf("TCP\n"); 
+        tcp_flag = 1; 
+       break; 
+      case 0x11: 
+				printf("UDP\n"); 
+        udp_flag = 1; 
+        break; 
+      case 0x01:
+				printf("ICMP\n");
+				icmp_flag = 1; 
+        break; 
+      default: 
+				printf("Not Implemented\n"); 
+  } 
+
+printf("%*sCheckSum: ",INFO_INDENT_WIDTH," "); 
+
+      printf("%d\n", ip_header.header_checksum); 
+printf("%*sSender IP: ",INFO_INDENT_WIDTH," ");
+      print_ip_addr(ip_header.source_ip_address);
+printf("%*sDest IP: ",INFO_INDENT_WIDTH," "); 
+ print_ip_addr(ip_header.dest_ip_address);
+
+
+//print the accompany headers 
+
+if(tcp_flag)
+	print_tcp_header(&pkt_data); 
+
+
+
+
+}
+
+void print_tcp_header(u_char ** pkt_data)
+{
+      tcp_header tcp_head;
+      memcpy(&tcp_head, *(pkt_data + 1) , sizeof(tcp_head)); 
+     // *pkt_data = 1 + sizeof(ipv4_header); //incremeintg hte data pointer to print out the next header
+      printf("%*sTCP Header\n",PROTOCOL_INDENT_WIDTH," "); 
+
+     printf("%*sSource Port: ",INFO_INDENT_WIDTH," "); 
+     printf("%u (bytes)\n", tcp_head.source_port); 
+
+     printf("%*sDest Port: ",INFO_INDENT_WIDTH," "); 
+      printf("%x\n", ntohs(tcp_head.dest_port)); 
+
+      printf("%*sSequence Number: ",INFO_INDENT_WIDTH," "); 
+      printf("%u\n", ntohs(tcp_head.seq_num));
+      printf("%*sACK NUMBER: ",INFO_INDENT_WIDTH," "); 
+      printf("%u\n", ntohs(tcp_head.awk_num));
+
+      printf("%*sACK Flag: \n",INFO_INDENT_WIDTH," "); 
+      printf("%*sSYN Flag: \n",INFO_INDENT_WIDTH," "); 
+      printf("%*sRST Flag: \n",INFO_INDENT_WIDTH," "); 
+      printf("%*sFIN Flag: \n",INFO_INDENT_WIDTH," "); 
+      printf("%*sWidow Size: %u\n",INFO_INDENT_WIDTH," ",tcp_head.window); 
+  printf("%*sChecksum: %u\n",INFO_INDENT_WIDTH," ",tcp_head.checksum); 
+}
+
+
+ 
