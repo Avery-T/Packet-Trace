@@ -54,6 +54,17 @@ typedef struct tcp_header
  uint16_t urgent_pointer;  
 }tcp_header; 
 
+typedef struct udp_header
+{
+ uint16_t source_port; 
+ uint16_t dest_port; 
+ uint16_t checksum; 
+}udp_header; 
+
+typedef struct icmp_header
+{
+ uint8_t type; 
+}icmp_header; 
 
 void print_ethernet_header(ethernet_frame ether_frame, uint32_t packet_num, uint32_t frame_len);
 void processes_ether_type_headers(uint16_t type, const u_char * pkt_data, uint32_t data_size); 
@@ -62,7 +73,9 @@ void print_mac_addr(u_char * mac_addr);
 void parse_arp_header(u_char * pkt_data, uint32_t data_size);
 void print_ip_header(u_char * pkt_data); 
 void print_arp_header(arp_header arp_head);
-void print_tcp_header(u_char ** pkt_data);
+void print_tcp_header(u_char * pkt_data);
+void print_udp_header(u_char * pkt_data);
+void print_icmp_header(u_char * pkt_data);
 
 int main(int argc, char * argv[])
 {
@@ -232,7 +245,7 @@ void print_ip_header(u_char * pkt_data)
      uint8_t tcp_flag=0, udp_flag=0,icmp_flag=0; 
       ipv4_header ip_header;
       memcpy(&ip_header, pkt_data+1, sizeof(ipv4_header)); 
-      *pkt_data = 1 + sizeof(ipv4_header); //incremeintg hte data pointer to print out the next header
+      pkt_data +=  1 + sizeof(ipv4_header); //incremeintg hte data pointer to print out the next header
       printf("%*sIP Header\n",PROTOCOL_INDENT_WIDTH," "); 
      printf("%*sHeader Len: ",INFO_INDENT_WIDTH," "); 
      printf("%x (bytes)\n", ip_header.header_length); 
@@ -275,42 +288,74 @@ printf("%*sSender IP: ",INFO_INDENT_WIDTH," ");
 printf("%*sDest IP: ",INFO_INDENT_WIDTH," "); 
  print_ip_addr(ip_header.dest_ip_address);
 
-
-//print the accompany headers 
-
 if(tcp_flag)
-	print_tcp_header(&pkt_data); 
+	print_tcp_header(pkt_data); 
 
-
-
+else if(udp_flag) 
+	print_udp_header( pkt_data); 
+else if(icmp_flag) 
+	print_icmp_header(pkt_data);
 
 }
 
-void print_tcp_header(u_char ** pkt_data)
+
+void print_tcp_header(u_char * pkt_data)
 {
       tcp_header tcp_head;
-      memcpy(&tcp_head, *(pkt_data + 1) , sizeof(tcp_head)); 
+      memcpy(&tcp_head, pkt_data , sizeof(tcp_head)); 
      // *pkt_data = 1 + sizeof(ipv4_header); //incremeintg hte data pointer to print out the next header
       printf("%*sTCP Header\n",PROTOCOL_INDENT_WIDTH," "); 
 
      printf("%*sSource Port: ",INFO_INDENT_WIDTH," "); 
-     printf("%u (bytes)\n", tcp_head.source_port); 
+     printf("%u (bytes)\n",ntohs( tcp_head.source_port)); 
 
      printf("%*sDest Port: ",INFO_INDENT_WIDTH," "); 
-      printf("%x\n", ntohs(tcp_head.dest_port)); 
+      printf("%u\n", ntohs(tcp_head.dest_port)); 
 
       printf("%*sSequence Number: ",INFO_INDENT_WIDTH," "); 
-      printf("%u\n", ntohs(tcp_head.seq_num));
+      printf("%d\n", ntohl(tcp_head.seq_num));
       printf("%*sACK NUMBER: ",INFO_INDENT_WIDTH," "); 
-      printf("%u\n", ntohs(tcp_head.awk_num));
+      printf("%u\n", ntohl(tcp_head.awk_num));
+      printf("%*sACK Flag: ",INFO_INDENT_WIDTH," "); 
+      (tcp_head.flag & 16 ) ? (printf("Yes\n")) : (printf("No\n")); 
+      printf("%*sSYN Flag: ",INFO_INDENT_WIDTH," "); 
+      (tcp_head.flag & 2) ? (printf("Yes\n")) : (printf("No\n")); 
+      printf("%*sRST Flag: ",INFO_INDENT_WIDTH," "); 
+      (tcp_head.flag & 4) ? (printf("Yes\n")) : (printf("No\n")); 
+      printf("%*sFIN Flag: ",INFO_INDENT_WIDTH," "); 
+      (tcp_head.flag & 1) ? (printf("Yes\n")) : (printf("No\n")); 
+      printf("%*sWidow Size: %u\n",INFO_INDENT_WIDTH," ",ntohs(tcp_head.window)); 
+      printf("%*sChecksum: (0x%x)\n",INFO_INDENT_WIDTH," ", ntohs(tcp_head.checksum)); 
+  }
 
-      printf("%*sACK Flag: \n",INFO_INDENT_WIDTH," "); 
-      printf("%*sSYN Flag: \n",INFO_INDENT_WIDTH," "); 
-      printf("%*sRST Flag: \n",INFO_INDENT_WIDTH," "); 
-      printf("%*sFIN Flag: \n",INFO_INDENT_WIDTH," "); 
-      printf("%*sWidow Size: %u\n",INFO_INDENT_WIDTH," ",tcp_head.window); 
-  printf("%*sChecksum: %u\n",INFO_INDENT_WIDTH," ",tcp_head.checksum); 
+
+void print_udp_header(u_char * pkt_data)
+{
+     udp_header udp_head;
+     memcpy(&udp_head, pkt_data , sizeof(udp_head)); 
+     // *pkt_data = 1 + sizeof(ipv4_header); //incremeintg hte data pointer to print out the next header
+     printf("%*sUDP Header\n",PROTOCOL_INDENT_WIDTH," "); 
+     printf("%*sSource Port: %u\n",INFO_INDENT_WIDTH," ", ntohs(udp_head.source_port)); 
+     printf("%*sDest Port: %u\n",INFO_INDENT_WIDTH," ", ntohs(udp_head.dest_port)); 
 }
 
 
- 
+void print_icmp_header(u_char * pkt_data)
+{
+     icmp_header icmp_head;
+     memcpy(&icmp_head, pkt_data, sizeof(icmp_head)); 
+     printf("%*sICMP Header\n",PROTOCOL_INDENT_WIDTH," "); 
+     printf("%*sType: ",INFO_INDENT_WIDTH," "); 
+switch(icmp_head.type)
+	{
+		case 8: 
+				printf("Request\n"); 
+        break; 
+    case 0: 
+       	printf("Reply\n"); 
+        break; 
+    default: 
+				printf("Not Implemented\n"); 
+  } 
+}
+
