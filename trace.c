@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <pcap.h>
-
+#include "checksum.h" 
 #define MAC_ADDR_SIZE 6 
 #define ETHER_TYPE_SIZE 2
 #define IP_ADDR_SIZE 4
@@ -54,6 +54,17 @@ typedef struct tcp_header
  uint16_t urgent_pointer;  
 }tcp_header; 
 
+typedef struct ip_sudo_header
+{
+    u_char source_ip_address[4]; 
+    u_char dest_ip_address[4]; 
+    uint8_t reserved; 
+    uint8_t protocal; 
+    uint16_t tcp_length; 
+} ip_sudo_header;
+
+
+ // for tcp checksum
 typedef struct udp_header
 {
  uint16_t source_port; 
@@ -73,7 +84,7 @@ void print_mac_addr(u_char * mac_addr);
 void parse_arp_header(u_char * pkt_data, uint32_t data_size);
 void print_ip_header(u_char * pkt_data); 
 void print_arp_header(arp_header arp_head);
-void print_tcp_header(u_char * pkt_data);
+void print_tcp_header(u_char * pkt_data, ip_sudo_header);
 void print_udp_header(u_char * pkt_data);
 void print_icmp_header(u_char * pkt_data);
 
@@ -251,16 +262,13 @@ void print_ip_header(u_char * pkt_data)
      printf("%x (bytes)\n", ip_header.header_length); 
 
 
-     printf("%*sTOS: ",INFO_INDENT_WIDTH," "); 
-   
+      printf("%*sTOS: ",INFO_INDENT_WIDTH," "); 
       printf("0x%x\n", ip_header.TOS); 
-printf("%*sTTL: ",INFO_INDENT_WIDTH," "); 
-
+      printf("%*sTTL: ",INFO_INDENT_WIDTH," "); 
       printf("%d\n", ip_header.time_to_live);
-printf("%*sIP PDU Len: ",INFO_INDENT_WIDTH," "); 
-
+      printf("%*sIP PDU Len: ",INFO_INDENT_WIDTH," "); 
       printf("%d (bytes)\n", ntohs(ip_header.total_length));
-printf("%*sPROTOCOL: ",INFO_INDENT_WIDTH," "); 
+      printf("%*sPROTOCOL: ",INFO_INDENT_WIDTH," "); 
 
 switch (ip_header.protocol)
   {
@@ -280,17 +288,31 @@ switch (ip_header.protocol)
 				printf("Not Implemented\n"); 
   } 
 
-printf("%*sCheckSum: ",INFO_INDENT_WIDTH," "); 
+  printf("%*sCheckSum: ",INFO_INDENT_WIDTH," "); 
+  
+   (in_cksum((unsigned short *)(&ip_header),sizeof(ip_header))) ? printf("Incorrect ") : printf("Correct "); 
 
-      printf("%d\n", ip_header.header_checksum); 
+  printf("(0x%x)\n", ip_header.header_checksum); 
+  
 printf("%*sSender IP: ",INFO_INDENT_WIDTH," ");
       print_ip_addr(ip_header.source_ip_address);
 printf("%*sDest IP: ",INFO_INDENT_WIDTH," "); 
  print_ip_addr(ip_header.dest_ip_address);
 
-if(tcp_flag)
-	print_tcp_header(pkt_data); 
-
+if(tcp_flag){
+  //if tcp create the sudo header for tcp 
+  ip_sudo_header ip_sudo_head; 
+  memcpy(&(ip_sudo_head.source_ip_address), ip_header.source_ip_address,4);
+  memcpy(&(ip_sudo_head.dest_ip_address), ip_header.dest_ip_address,4); 
+ // ip_sudo_head.source_ip_address = ntohs(ip_sudo_head.source_ip_address); 
+  //ip_sudo_head.dest_ip_address = ntohs(ip_sudo_head.dest_ip_address); 
+  ip_sudo_head.reserved = 0; 
+  ip_sudo_head.protocal = ip_header.protocol;  
+  uint16_t t = (ntohs(ip_header.total_length) - sizeof(ipv4_header));
+  ip_sudo_head.tcp_length = htons(t); 
+  //ip_sudo_head.tcp_length = ip_header.total_length -sizeof(ip_header);
+	print_tcp_header(pkt_data, ip_sudo_head); 
+ } 
 else if(udp_flag) 
 	print_udp_header( pkt_data); 
 else if(icmp_flag) 
@@ -299,10 +321,10 @@ else if(icmp_flag)
 }
 
 
-void print_tcp_header(u_char * pkt_data)
+void print_tcp_header(u_char * pkt_data, ip_sudo_header ip_sudo_head)
 {
       tcp_header tcp_head;
-      memcpy(&tcp_head, pkt_data , sizeof(tcp_head)); 
+      memcpy(&tcp_head, pkt_data, sizeof(tcp_head)); 
      // *pkt_data = 1 + sizeof(ipv4_header); //incremeintg hte data pointer to print out the next header
       printf("%*sTCP Header\n",PROTOCOL_INDENT_WIDTH," "); 
 
@@ -317,7 +339,7 @@ void print_tcp_header(u_char * pkt_data)
       printf("%*sACK NUMBER: ",INFO_INDENT_WIDTH," "); 
       printf("%u\n", ntohl(tcp_head.awk_num));
       printf("%*sACK Flag: ",INFO_INDENT_WIDTH," "); 
-      (tcp_head.flag & 16 ) ? (printf("Yes\n")) : (printf("No\n")); 
+      (tcp_head.flag & 16 ) ? (printf("Yes\n")) : (printf("N)o\n")); 
       printf("%*sSYN Flag: ",INFO_INDENT_WIDTH," "); 
       (tcp_head.flag & 2) ? (printf("Yes\n")) : (printf("No\n")); 
       printf("%*sRST Flag: ",INFO_INDENT_WIDTH," "); 
@@ -325,7 +347,24 @@ void print_tcp_header(u_char * pkt_data)
       printf("%*sFIN Flag: ",INFO_INDENT_WIDTH," "); 
       (tcp_head.flag & 1) ? (printf("Yes\n")) : (printf("No\n")); 
       printf("%*sWidow Size: %u\n",INFO_INDENT_WIDTH," ",ntohs(tcp_head.window)); 
-      printf("%*sChecksum: (0x%x)\n",INFO_INDENT_WIDTH," ", ntohs(tcp_head.checksum)); 
+      //check sum calculation 
+      u_char * check_sum_header; 
+      uint8_t * temp; 
+      uint16_t len = sizeof(ip_sudo_head) + ntohs(ip_sudo_head.tcp_length); 
+      printf("length %u", len);
+      check_sum_header =  malloc(len); 
+      memcpy(check_sum_header, &ip_sudo_head, sizeof(ip_sudo_head)); 
+      //temp = check_sum_header + sizeof(ip_sudo_head); 
+      memcpy(check_sum_header + sizeof(ip_sudo_head) , pkt_data , ntohs(ip_sudo_head.tcp_length) ); 
+      printf("%*sChecksum: (0x) ",INFO_INDENT_WIDTH," "); 
+      __u_short x = in_cksum( ((unsigned short *) (&check_sum_header)) ,len); 
+
+     if(x) 
+				printf("incorrect"); 
+     if(x==0)
+				printf("correct");
+    //  (in_cksum( ((unsigned short *) (&check_sum_header)) , len)) ? printf("Incorrect ") : printf("Correct "); 
+      free(check_sum_header); 
   }
 
 
@@ -346,6 +385,7 @@ void print_icmp_header(u_char * pkt_data)
      memcpy(&icmp_head, pkt_data, sizeof(icmp_head)); 
      printf("%*sICMP Header\n",PROTOCOL_INDENT_WIDTH," "); 
      printf("%*sType: ",INFO_INDENT_WIDTH," "); 
+
 switch(icmp_head.type)
 	{
 		case 8: 
